@@ -3,7 +3,8 @@
 /// iterate over.
 /// </summary>
 /// <typeparam name="TItem">The type of the values.</typeparam>
-public abstract class Pageable<TItem> : IAsyncEnumerable<TItem> where TItem : notnull
+/// <typeparam name="TResponse">The original HTTP response body.</typeparam>
+public abstract class Pageable<TItem, TResponse> : IAsyncEnumerable<TItem> where TItem : notnull where TResponse : notnull
 {
     /// <summary>
     /// Gets a <see cref="CancellationToken"/> used for requests made while
@@ -12,14 +13,14 @@ public abstract class Pageable<TItem> : IAsyncEnumerable<TItem> where TItem : no
     protected virtual CancellationToken CancellationToken { get; }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="Pageable{TItem}"/>
+    /// Initializes a new instance of the <see cref="Pageable{TItem, TResponse}"/>
     /// class for mocking.
     /// </summary>
     protected Pageable() =>
         CancellationToken = CancellationToken.None;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="Pageable{TItem}"/>
+    /// Initializes a new instance of the <see cref="Pageable{TItem, TResponse}"/>
     /// class.
     /// </summary>
     /// <param name="cancellationToken">
@@ -30,13 +31,13 @@ public abstract class Pageable<TItem> : IAsyncEnumerable<TItem> where TItem : no
         CancellationToken = cancellationToken;
 
     /// <summary>
-    /// Enumerate the values a <see cref="Page{TItem}"/> at a time.  This may
+    /// Enumerate the values a <see cref="Page{TItem, TResponse}"/> at a time.  This may
     /// make multiple service requests.
     /// </summary>
     /// <returns>
-    /// An async sequence of <see cref="Page{TItem}"/>s.
+    /// An async sequence of <see cref="Page{TItem, TResponse}"/>s.
     /// </returns>
-    public abstract IAsyncEnumerable<Page<TItem>> AsPagesAsync();
+    public abstract IAsyncEnumerable<Page<TItem, TResponse>> AsPagesAsync();
 
     /// <summary>
     /// Enumerate the values in the collection asynchronously.  This may
@@ -59,89 +60,89 @@ public abstract class Pageable<TItem> : IAsyncEnumerable<TItem> where TItem : no
     }
 }
 
-internal class OffsetPageable<TRequest, TResponse, TItem> : Pageable<TItem> where TItem : notnull
+internal abstract class OffsetPageable<TRequest, TResponse, TItem> : Pageable<TItem, TResponse> where TItem : notnull where TResponse : notnull
 {
     private readonly TRequest _request;
-    private readonly Func<TRequest, Task<TResponse>> _sendRequest;
-    private readonly Action<TRequest, int> _setOffset;
-    private readonly Func<TRequest, int> _getOffset;
-    private readonly Func<TResponse, IReadOnlyList<TItem>> _getItems;
-    private readonly Func<TRequest, int> _getStep;
-    private readonly Func<TResponse, bool> _getHasNextPage;
-    private readonly IEnumerable<Page<TItem>> _pages;
+    private readonly Func<TRequest, Task<TResponse>> _getNextPage;
+    protected abstract void SetOffset(TRequest request, int offset);
+    protected abstract int GetOffset(TRequest request);
+    protected abstract IReadOnlyList<TItem>? GetItems(TResponse response);
+    protected abstract int? GetStep(TRequest request);
+    protected abstract bool? HasNextPage(TResponse response);
 
     public OffsetPageable(
         TRequest request,
-        Func<TRequest, Task<TResponse>> sendRequest,
-        Action<TRequest, int> setOffset, 
-        Func<TRequest, int> getOffset, 
-        Func<TResponse, IReadOnlyList<TItem>> getItems, 
-        Func<TRequest, int> getStep, 
-        Func<TResponse, bool> getHasNextPage
+        Func<TRequest, Task<TResponse>> getNextPage
         )
     {
         _request = request;
-        _sendRequest = sendRequest;
-        _setOffset = setOffset;
-        _getOffset = getOffset;
-        _getItems = getItems;
-        _getStep = getStep;
-        _getHasNextPage = getHasNextPage;
+        _getNextPage = getNextPage;
     }
 
-    public override async IAsyncEnumerable<Page<TItem>> AsPagesAsync()
+    public override async IAsyncEnumerable<Page<TItem, TResponse>> AsPagesAsync()
     {
-        var offset = _getOffset(_request);
-        var step = _getStep(_request);
+        var hasStep = GetStep(_request) is not null;
+        var offset = GetOffset(_request);
         bool hasNextPage;
         do
         {
-            var response = await _sendRequest(_request).ConfigureAwait(false);
-            var items = _getItems(response);
-            hasNextPage = _getHasNextPage(response);
-            yield return Page<TItem>.FromItems(items, response);
-            offset += step;
-            _setOffset(_request, offset);
+            var response = await _getNextPage(_request).ConfigureAwait(false);
+            var items = GetItems(response);
+            var itemCount = items?.Count ?? 0;
+            hasNextPage = HasNextPage(response) ?? itemCount > 0;
+            if (items != null)
+            {
+                yield return new Page<TItem, TResponse>(items, response);
+            }
+
+            // If there is a step, we need to increment the offset by the number of items
+            if (hasStep)
+            {
+                offset += items?.Count ?? 1;
+            }
+            else
+            {
+                offset += 1;
+            }
+            SetOffset(_request, offset);
         } while (hasNextPage);
     }
 }
 
-internal class CursorPageable<TRequest, TResponse, TItem> : Pageable<TItem> where TItem : notnull
+internal abstract class CursorPageable<TRequest, TResponse, TItem> : Pageable<TItem, TResponse> where TItem : notnull where TResponse : notnull
 {
     private readonly TRequest _request;
     private readonly Func<TRequest, Task<TResponse>> _sendRequest;
-    private readonly Action<TRequest, string> _setCursor;
-    private readonly Func<TResponse, string?> _getNextCursor;
-    private readonly Func<TResponse, IReadOnlyList<TItem>> _getItems;
+    protected abstract void SetCursor(TRequest request, string cursor);
+    protected abstract string? GetNextCursor(TResponse response);
+    protected abstract IReadOnlyList<TItem>? GetItems(TResponse response);
 
     public CursorPageable(
         TRequest request,
-        Func<TRequest, Task<TResponse>> sendRequest,
-        Action<TRequest, string> setCursor, 
-        Func<TResponse, string?> getNextCursor, 
-        Func<TResponse, IReadOnlyList<TItem>> getItems
+        Func<TRequest, Task<TResponse>> sendRequest
     )
     {
         _request = request;
         _sendRequest = sendRequest;
-        _setCursor = setCursor;
-        _getNextCursor = getNextCursor;
-        _getItems = getItems;
     }
 
-    public override async IAsyncEnumerable<Page<TItem>> AsPagesAsync()
+    public override async IAsyncEnumerable<Page<TItem, TResponse>> AsPagesAsync()
     {
         do
         {
             var response = await _sendRequest(_request).ConfigureAwait(false);
-            var items = _getItems(response);
-            var nextCursor = _getNextCursor(response);
-            yield return Page<TItem>.FromItems(items, response);
+            var items = GetItems(response);
+            var nextCursor = GetNextCursor(response);
+            if (items != null)
+            {
+                yield return new Page<TItem, TResponse>(items, response);
+            }
+
             if (nextCursor == null)
             {
                 break;
             }
-            _setCursor(_request, nextCursor);
+            SetCursor(_request, nextCursor);
         } while (true);
     }
 }

@@ -32,7 +32,7 @@ public class Tests
         {
             Assert.Multiple(() =>
             {
-                Assert.That(page.GetOriginalResponse(), Is.InstanceOf<PetPageResponse>());
+                Assert.That(page.OriginalResponse, Is.InstanceOf<PetPageResponse>());
             });
             index++;
         }
@@ -62,7 +62,7 @@ public class Tests
         {
             Assert.Multiple(() =>
             {
-                Assert.That(page.GetOriginalResponse(), Is.InstanceOf<PetCursorResponse>());
+                Assert.That(page.OriginalResponse, Is.InstanceOf<PetCursorResponse>());
             });
             index++;
         }

@@ -1,16 +1,11 @@
 public class ApiService
 {
-    public Pageable<Pet> GetAllPetsAsync(PetPageRequest request)
+    public Pageable<Pet, PetPageResponse> GetAllPetsAsync(PetPageRequest request)
     {
         // TODO: clone request
-        var pageable = new OffsetPageable<PetPageRequest, PetPageResponse, Pet>(
+        var pageable = new PetPageRequestPageResponsePageable(
             request,
-            GetPetsPageAsync,
-            (request, offset) => request.Page = offset,
-            request => request.Page ?? 0,
-            response => response.Pets,
-            request => 1,
-            response => response.PaginationInfo.HasNextPage
+            GetPetsPageAsync
         );
         return pageable;
     }
@@ -36,17 +31,11 @@ public class ApiService
         await Task.Delay(200);
         return response;
     }
-    
-    public Pageable<Pet> GetAllPetsCursorAsync(PetCursorRequest request)
+
+    public Pageable<Pet, PetCursorResponse> GetAllPetsCursorAsync(PetCursorRequest request)
     {
         // TODO: clone request
-        var pageable = new CursorPageable<PetCursorRequest, PetCursorResponse, Pet>(
-            request,
-            GetPetsCursorAsync,
-            (request, cursor) => request.Cursor = cursor,
-            response => response.CursorInfo.Next,
-            response => response.Pets
-        );
+        var pageable = new PetCursorRequestPetCursorResponsePageable(request, GetPetsCursorAsync);
         return pageable;
     }
 
@@ -67,7 +56,7 @@ public class ApiService
                 Next = request.Cursor == null ? "1" : int.Parse(request.Cursor) + 1 + ""
             }
         };
-        if(response.CursorInfo.Next == "5") response.CursorInfo.Next = null;
+        if (response.CursorInfo.Next == "5") response.CursorInfo.Next = null;
         await Task.Delay(200);
         return response;
     }
@@ -90,6 +79,27 @@ public class PaginationInfo
     public bool HasNextPage { get; set; }
 }
 
+internal class PetPageRequestPageResponsePageable : OffsetPageable<PetPageRequest, PetPageResponse, Pet>
+{
+    public PetPageRequestPageResponsePageable(PetPageRequest request,
+        Func<PetPageRequest, Task<PetPageResponse>> getNextPage) : base(request, getNextPage)
+    {
+    }
+
+    protected override void SetOffset(PetPageRequest request, int offset)
+    {
+        request.Page = offset;
+    }
+
+    protected override int GetOffset(PetPageRequest request) => request.Page ?? 0;
+
+    protected override IReadOnlyList<Pet> GetItems(PetPageResponse response) => response.Pets;
+
+    protected override int? GetStep(PetPageRequest request) => null;
+
+    protected override bool? HasNextPage(PetPageResponse response) => response.PaginationInfo.HasNextPage;
+}
+
 public class PetCursorRequest
 {
     public string? Cursor { get; set; }
@@ -104,6 +114,23 @@ public class PetCursorResponse
 public class CursorInfo
 {
     public string? Next { get; set; }
+}
+
+internal class PetCursorRequestPetCursorResponsePageable : CursorPageable<PetCursorRequest, PetCursorResponse, Pet>
+{
+    public PetCursorRequestPetCursorResponsePageable(PetCursorRequest request, Func<PetCursorRequest, Task<PetCursorResponse>> sendRequest) 
+        : base(request, sendRequest)
+    {
+    }
+
+    protected override void SetCursor(PetCursorRequest request, string cursor)
+    {
+        request.Cursor = cursor;
+    }
+
+    protected override string? GetNextCursor(PetCursorResponse response) => response.CursorInfo.Next;
+
+    protected override IReadOnlyList<Pet> GetItems(PetCursorResponse response) => response.Pets;
 }
 
 public class Pet
