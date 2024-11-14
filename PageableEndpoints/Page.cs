@@ -1,24 +1,17 @@
 /// <summary>
-/// A single <see cref="Page{TItem, TResponse}"/> of items from a request that may return
-/// zero or more <see cref="Page{TItem, TResponse}"/>s of items.
+/// A single <see cref="Page{TItem}"/> of items from a request that may return
+/// zero or more <see cref="Page{TItem}"/>s of items.
 /// </summary>
 /// <typeparam name="TItem">The type of items.</typeparam>
-/// <typeparam name="TResponse">The original HTTP response body.</typeparam>
-public class Page<TItem, TResponse> where TItem : notnull where TResponse : notnull
+public class Page<TItem> where TItem : notnull
 {
-    public Page(IReadOnlyList<TItem> items, TResponse response)
+    public Page(IReadOnlyList<TItem> items)
     {
         Items = items;
-        OriginalResponse = response;
     }
     
     /// <summary>
-    /// Gets the items in this <see cref="Page{TItem, TResponse}"/>.
+    /// Gets the items in this <see cref="Page{TItem}"/>.
     /// </summary>
     public IReadOnlyList<TItem> Items { get; }
-    
-    /// <summary>
-    /// Gets the items in this <see cref="Page{TItem, TResponse}"/>.
-    /// </summary>
-    public TResponse OriginalResponse { get; }
 }
